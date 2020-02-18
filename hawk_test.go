@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/base64"
+	"github.com/stretchr/testify/assert"
 	"hash"
 	"net/http"
 	"net/url"
@@ -11,16 +12,7 @@ import (
 	"strconv"
 	"testing"
 	"time"
-
-	. "launchpad.net/gocheck"
 )
-
-// Hook up gocheck into the "go test" runner.
-func Test(t *testing.T) { TestingT(t) }
-
-type HawkSuite struct{}
-
-var _ = Suite(&HawkSuite{})
 
 var requestAuthTests = []struct {
 	meth string
@@ -127,7 +119,7 @@ func creds(key string, h func() hash.Hash) CredentialsLookupFunc {
 	}
 }
 
-func (s *HawkSuite) TestRequestAuth(c *C) {
+func TestRequestAuth(t *testing.T) {
 	for i, test := range requestAuthTests {
 		if test.meth == "" {
 			test.meth = "GET"
@@ -162,16 +154,16 @@ func (s *HawkSuite) TestRequestAuth(c *C) {
 		var err error
 		req.URL, err = url.Parse(test.url)
 		auth, err := NewAuthFromRequest(req, creds(test.key, test.hash), nonce)
-		c.Assert(err, DeepEquals, test.perr, Commentf("test %d", i))
+		assert.Equal(t, test.perr, err, "test %d", i)
 
 		if err == nil {
 			err = auth.Valid()
-			c.Assert(err, DeepEquals, test.verr, Commentf("test %d, %#v", i, auth.NormalizedString(AuthHeader)))
+			assert.Equal(t, test.verr, err, "test %d, %#v", i, auth.NormalizedString(AuthHeader))
 		}
 	}
 }
 
-func (s *HawkSuite) TestRequestSigning(c *C) {
+func TestRequestSigning(t *testing.T) {
 	u, _ := url.Parse("https://example.net/somewhere/over/the/rainbow")
 	auth := NewRequestAuth(&http.Request{URL: u, Method: "POST"},
 		&Credentials{ID: "123456", Key: "2983d45yun89q", Hash: sha256.New}, 0)
@@ -181,7 +173,7 @@ func (s *HawkSuite) TestRequestSigning(c *C) {
 	h := auth.PayloadHash("text/plain")
 	h.Write([]byte("something to write about"))
 	auth.SetHash(h)
-	c.Assert(auth.RequestHeader(), Equals, `Hawk id="123456", mac="q1CwFoSHzPZSkbIvl0oYlD+91rBUEvFk763nMjMndj8=", ts="1353809207", nonce="Ygvqdz", hash="2QfCt3GuY9HQnHWyWD3wX68ZOKbynqlfYmuO2ZBRqtY=", ext="Bazinga!"`)
+	assert.Equal(t, `Hawk id="123456", mac="q1CwFoSHzPZSkbIvl0oYlD+91rBUEvFk763nMjMndj8=", ts="1353809207", nonce="Ygvqdz", hash="2QfCt3GuY9HQnHWyWD3wX68ZOKbynqlfYmuO2ZBRqtY=", ext="Bazinga!"`, auth.RequestHeader())
 }
 
 var responseAuthHeaderTests = []struct {
@@ -198,7 +190,7 @@ var responseAuthHeaderTests = []struct {
 	},
 }
 
-func (s *HawkSuite) TestResponseAuth(c *C) {
+func TestResponseAuth(t *testing.T) {
 	auth := &Auth{
 		Method:      "POST",
 		Host:        "example.com",
@@ -212,11 +204,11 @@ func (s *HawkSuite) TestResponseAuth(c *C) {
 
 	for i, test := range responseAuthHeaderTests {
 		err := auth.ValidResponse(test.hdr)
-		c.Assert(err, Equals, test.err, Commentf("test %d", i))
+		assert.Equal(t, test.err, err, "test %d", i)
 	}
 }
 
-func (s *HawkSuite) TestResponseHeader(c *C) {
+func TestResponseHeader(t *testing.T) {
 	auth := &Auth{
 		Method:      "POST",
 		Host:        "example.com",
@@ -228,42 +220,42 @@ func (s *HawkSuite) TestResponseHeader(c *C) {
 		Credentials: Credentials{ID: "123456", Key: "werxhqb98rpaxn39848xrunpaw3489ruxnpa98w4rxn", Hash: sha256.New},
 	}
 	auth.Hash, _ = base64.StdEncoding.DecodeString("f9cDF/TDm7TkYRLnGwRMfeDzT6LixQVLvrIKhh0vgmM=")
-	c.Assert(auth.ResponseHeader("response-specific"), Equals, `Hawk mac="XIJRsMl/4oL+nn+vKoeVZPdCHXB4yJkNnBbTbHFZUYE=", ext="response-specific", hash="f9cDF/TDm7TkYRLnGwRMfeDzT6LixQVLvrIKhh0vgmM="`)
+	assert.Equal(t, `Hawk mac="XIJRsMl/4oL+nn+vKoeVZPdCHXB4yJkNnBbTbHFZUYE=", ext="response-specific", hash="f9cDF/TDm7TkYRLnGwRMfeDzT6LixQVLvrIKhh0vgmM="`, auth.ResponseHeader("response-specific"))
 }
 
-func (s *HawkSuite) TestValidHash(c *C) {
+func TestValidHash(t *testing.T) {
 	auth := &Auth{Credentials: Credentials{Hash: sha256.New}}
 	auth.Hash, _ = base64.StdEncoding.DecodeString("2QfCt3GuY9HQnHWyWD3wX68ZOKbynqlfYmuO2ZBRqtY=")
 	h := auth.PayloadHash("text/plain")
 	h.Write([]byte("something to write about"))
-	c.Assert(auth.ValidHash(h), Equals, true)
+	assert.Equal(t, true, auth.ValidHash(h))
 	h.Write([]byte("a"))
-	c.Assert(auth.ValidHash(h), Equals, false)
+	assert.Equal(t, false, auth.ValidHash(h))
 }
 
-func (s *HawkSuite) TestBewit(c *C) {
+func TestBewit(t *testing.T) {
 	u, _ := url.Parse("https://example.com/somewhere/over/the/rainbow")
 	auth := NewRequestAuth(&http.Request{URL: u},
 		&Credentials{ID: "123456", Key: "2983d45yun89q", Hash: sha256.New}, 0)
 	auth.Ext = "xandyandz"
 	auth.Timestamp = time.Unix(1356420707, 0)
-	c.Assert(auth.Bewit(), Equals, "MTIzNDU2XDEzNTY0MjA3MDdca3NjeHdOUjJ0SnBQMVQxekRMTlBiQjVVaUtJVTl0T1NKWFRVZEc3WDloOD1ceGFuZHlhbmR6")
+	assert.Equal(t, "MTIzNDU2XDEzNTY0MjA3MDdca3NjeHdOUjJ0SnBQMVQxekRMTlBiQjVVaUtJVTl0T1NKWFRVZEc3WDloOD1ceGFuZHlhbmR6", auth.Bewit())
 }
 
-func (s *HawkSuite) TestStaleHeader(c *C) {
+func TestStaleHeader(t *testing.T) {
 	Now = now(1365741469)
 	auth := &Auth{Credentials: Credentials{Key: "werxhqb98rpaxn39848xrunpaw3489ruxnpa98w4rxn", Hash: sha256.New}}
-	c.Assert(auth.StaleTimestampHeader(), Equals, `Hawk ts="1365741469", tsm="b4Qqhz8OUBq21saghHLV1ktwlXE72T1xtTEZkSlWizA=", error="Stale timestamp"`)
+	assert.Equal(t, `Hawk ts="1365741469", tsm="b4Qqhz8OUBq21saghHLV1ktwlXE72T1xtTEZkSlWizA=", error="Stale timestamp"`, auth.StaleTimestampHeader())
 }
 
-func (s *HawkSuite) TestUpdateOffset(c *C) {
+func TestUpdateOffset(t *testing.T) {
 	Now = now(0)
 	auth := &Auth{Credentials: Credentials{Key: "werxhqb98rpaxn39848xrunpaw3489ruxnpa98w4rxn", Hash: sha256.New}}
 	offset, err := auth.UpdateOffset(`Hawk ts="1365741469", tsm="b4Qqhz8OUBq21saghHLV1ktwlXE72T1xtTEZkSlWizA=", error="Stale timestamp"`)
-	c.Assert(err, IsNil)
-	c.Assert(offset, Equals, 1365741469*time.Second)
-	c.Assert(auth.Timestamp.Unix(), Equals, int64(1365741469))
-	c.Assert(auth.Nonce, HasLen, 8)
+	assert.Nil(t, err)
+	assert.Equal(t, 1365741469*time.Second, offset)
+	assert.Equal(t, int64(1365741469), auth.Timestamp.Unix())
+	assert.Len(t, auth.Nonce, 8)
 }
 
 var header = `Hawk id="dh37fgj492je", ts="1353832234", nonce="j4h3g2", ext="some-app-ext-data", mac="6R4rV5iE+NPoym+WwjeHzjAGXUtLNIxmo1vpMofpLAE="`
